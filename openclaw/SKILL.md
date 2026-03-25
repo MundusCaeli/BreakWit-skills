@@ -35,20 +35,39 @@ metadata:
 | 項目 | 判定方法 | デフォルト |
 |------|----------|-----------|
 | 出力フォーマット | 「PDF」「パワポ」「PPTX」「PowerPoint」等のキーワード | `pdf` |
-| テンプレート | テンプレート名の直接指定、または「横置き」「3列」等の説明 | 自動選択（横動画→h-portrait-2col-12、縦動画→v-portrait-2col-12） |
+| テンプレート | テンプレート名の直接指定、または「横置き」「3列」等の説明 | フォーマットにより自動選択（下記参照） |
 | 台本テキスト | 動画と一緒に `.txt` ファイルが送られているか | なし |
 
 **フォーマット判定の例：**
 - 「PDFで作って」「PDFにして」 → `pdf`
 - 「パワポで」「PPTXで」「PowerPointで」 → `pptx`
-- 指定なし → `pdf`
+- **指定なしの場合 → ユーザーに聞く：**
+
+```
+動画を受け取りました。カット表のフォーマットはどちらにしますか？
+• PDF
+• PPTX（パワポ）
+```
+
+ユーザーの回答を待ってから処理を開始する。勝手にデフォルトを選ばない。
+
+**⚠️ PPTX/PDF テンプレート互換性（重要）：**
+- PPTXは**16:9 landscapeスライド固定**。`portrait` テンプレートはPDF専用でPPTXでは使えない
+- PPTXの場合: `h-landscape-` または `v-landscape-` テンプレートのみ使用可能
+- PDFの場合: すべてのテンプレートが使用可能
+
+**テンプレート自動選択のデフォルト：**
+- PDF + 横動画 → `h-portrait-2col-12`
+- PDF + 縦動画 → `v-portrait-2col-12`
+- PPTX + 横動画 → `h-landscape-2col-12`
+- PPTX + 縦動画 → `v-landscape-1row-6`
 
 **テンプレート判定の例：**
 - 「横置きで」 → `h-landscape-2col-12`
 - 「3列で」 → `h-landscape-3col-21`
-- 「縦動画」 → `v-portrait-2col-12`
+- 「縦動画」 → PDF: `v-portrait-2col-12` / PPTX: `v-landscape-1row-6`
 - テンプレート名を直接指定（例: `h-landscape-3col-21`） → そのまま使用
-- 指定なし → `h-portrait-2col-12`
+- ユーザーがPPTXでportraitテンプレートを指定した場合 → 対応するlandscapeテンプレートに自動変換し、ユーザーに伝える
 
 ### 2. 受信確認メッセージを送信
 
@@ -68,7 +87,9 @@ CLIを実行する前に、以下を確認する：
 test -n "$BREAKWIT_DIR" && test -x "$BREAKWIT_DIR/scripts/break-wit-cli.sh" && echo "OK" || echo "NG"
 ```
 
-検証に失敗した場合は「Break Wit の環境が正しく設定されていません。管理者に連絡してください。」と伝える。
+検証に失敗した場合は、`find ~/Development -maxdepth 6 -type f -name 'break-wit-cli.sh'` などで実体を探し、見つかった場合はその親ディレクトリを `BREAKWIT_DIR` として使う。
+
+それでも失敗した場合は「Break Wit の環境が正しく設定されていません。管理者に連絡してください。」と伝える。
 
 ### 4. サーバー確認・起動
 
@@ -89,6 +110,33 @@ bash "$BREAKWIT_DIR/scripts/start-breakwit-server.sh"
 ### 5. CLI実行
 
 `exec` ツールで以下のコマンドを実行する。環境変数 `BREAKWIT_DIR` が Break Wit のプロジェクトディレクトリを指す。
+
+### 5-0. Slack添付ファイルの取得（必要時のみ）
+
+Slack DM/チャンネルに添付された動画がワークスペースや一時ディレクトリに見当たらない場合、Slack API でファイル実体を取得してよい。
+
+手順：
+1. ユーザーの添付リンクやファイルIDから `files.info` を呼び、`url_private_download` を取得する
+2. 環境変数に入っている Slack Bot Token を `Authorization: Bearer ...` で付けてダウンロードする
+3. 保存先は `/tmp/<適切なファイル名>` を使う
+
+例：
+
+```bash
+curl -fsSL -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  "https://slack.com/api/files.info?file=<FILE_ID>"
+
+curl -fLsS -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  "<url_private_download>" \
+  -o /tmp/video.mp4
+```
+
+注意：
+- **トークンをスキルやメモに直接書かない**
+- 使うのは環境変数のみ（例: `SLACK_BOT_TOKEN`）
+- `witcrafthq.slack.com/files/...` の permalink をそのまま `curl` してもHTMLが返ることがある。`url_private_download` を使う
+- まず `file` コマンド等で本当に動画が落ちたか確認する
+- `files.info` で `mimetype` / `size` / `duration_ms` / `url_private_download` を取れるので、必要に応じて活用する
 
 **基本コマンド：**
 
@@ -136,6 +184,10 @@ CLI は JSON を stdout に出力する。
 
 **成功した場合：**
 1. `outputPath` のファイルをユーザーにファイルとして送信する
+   - Slackで通常の返送手段がない場合は、Slack API の external upload フローを使ってよい
+   - `files.upload` は deprecated のため使わない
+   - 手順は `files.getUploadURLExternal` → バイナリPOST → `files.completeUploadExternal`
+   - 認証は環境変数の Slack Bot Token を使う（スキルやメモに直書きしない）
 2. 以下の情報をメッセージに含める：
 
 ```
@@ -169,6 +221,39 @@ CLI は JSON を stdout に出力する。
 | FFmpeg関連 | 「動画の解析中にエラーが発生しました。別の形式で試していただけますか？」 |
 | メモリ/ディスク不足 | 「サーバーのリソースが不足しています。しばらくしてから再度お試しください。」 |
 | その他 | 「処理中にエラーが発生しました。もう一度お試しいただくか、別の動画でお試しください。」 |
+
+### 6.5. Slackへの返送（必要時のみ）
+
+Slackに完成ファイルを返す必要がある場合、`files.upload` ではなく external upload フローを使う。
+
+流れ：
+1. `files.getUploadURLExternal` に `filename` と `length` を送る
+2. 返ってきた `upload_url` に生成ファイルのバイナリをPOSTする
+3. `files.completeUploadExternal` で `file_id` と `channel_id` を指定して完了する
+
+例：
+
+```bash
+# 1) upload_url と file_id を取得
+curl -fsSL -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  -F "filename=$FILENAME" \
+  -F "length=$FILESIZE" \
+  https://slack.com/api/files.getUploadURLExternal
+
+# 2) upload_url にバイナリPOST
+curl -fsSL -X POST --data-binary @"$FILE" "$UPLOAD_URL"
+
+# 3) 完了
+curl -fsSL -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  -H 'Content-Type: application/json; charset=utf-8' \
+  --data "{\"files\":[{\"id\":\"$FILE_ID\",\"title\":\"$FILENAME\"}],\"channel_id\":\"$CHANNEL_ID\"}" \
+  https://slack.com/api/files.completeUploadExternal
+```
+
+注意：
+- `channel_id` にはDM/チャンネルIDを使う。ユーザーIDではなく会話IDの方が安全
+- `files.upload` で `method_deprecated` が返ったら、この方式に切り替える
+- JSON組み立てミスを避けるため、必要なら Python/Node でレスポンスをparseしてよい
 
 ### 7. コマンドが見つからない場合
 
