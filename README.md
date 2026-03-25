@@ -61,7 +61,7 @@ export BREAKWIT_DIR=/path/to/cut-sheet-app
 
 ## 必要なもの
 
-- **Break Wit**（このリポジトリ）
+- **[Break Wit](https://github.com/MundusCaeli/BreakWit)**（本体アプリ）
 - **FFmpeg** — 動画解析
 - **bun** — Node.jsランタイム（サーバー起動）
 - **jq** — JSON処理
