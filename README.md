@@ -1,6 +1,6 @@
-# Break Wit Skill — 動画カット表自動生成
+# Break Wit Skill — 動画カット検出、音声＆テキスト抽出、表生成
 
-動画ファイルからカット表（PDF/PPTX）を自動生成するAIスキル。
+動画ファイルから最終的にカット表（PDF/PPTX）を自動生成できるAIスキル。
 Claude Code、Codex、Gemini CLI、OpenCode、Droid、OpenClawに対応。
 
 ## クイックインストール
